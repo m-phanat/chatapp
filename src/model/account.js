@@ -13,6 +13,10 @@ const Account = new Schema({
         type: String,
         required: true
     },
+    profileUrl: {
+        type: String,
+        default: null
+    },
     displayName: {
         type: String,
         required: true
@@ -21,9 +25,25 @@ const Account = new Schema({
         type: String, 
         required: true
     },
+    isAdmin: {
+        type: Boolean,
+        default: false
+    },
+    isOperation: {
+        type: Boolean,
+        default: false
+    },
     badge: {
         type: Number,
         default: 0
+    },
+    allowDeviceType1: {
+        type: Number,
+        default: 1
+    },
+    allowDeviceType2: {
+        type: Number,
+        default: 1
     },
     devices: [Device]
 })

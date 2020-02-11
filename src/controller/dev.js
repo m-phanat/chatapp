@@ -8,6 +8,11 @@ const Message = require('../model/message')
 const Device = require('../model/device')
 const DeviceRoomStatus = require('../model/devicrRoomStatus')
 
+const {
+    accountResponse,
+    errorStatusCode
+} = require('../function/response')
+
 async function getAllAccount() {
     return new Promise((resolve, reject) => {
         Account.find({}, (err, accounts) => {
@@ -213,6 +218,198 @@ async function addDeviceRoomStatus(accountId, uuid, deviceRoomStatus) {
         })
     })
 }
+
+//
+async function getAccountWithSqlId(id) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.findOne({
+           sqlId: id
+       }, (err, account) => {
+           if (err) {
+               reject(err)
+           }
+           if (!account) {
+               reject('error')
+           } else {
+               resolve(account)
+           }
+       })
+   }) 
+}
+async function updateAccountFcmToken(userId, uuid, fcmToken) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+           _id: mongoose.Types.ObjectId(userId)
+       }, {
+           $set: {
+               'devices.$[d].fcmToken': fcmToken
+           }
+       }, {
+           arrayFilters: [
+               {
+                   'd.uuid': uuid
+               }
+           ]
+       }, (err, result) => {
+            if (err) {
+                reject(err)
+            }
+            if (!result) {
+                reject('error')
+            } else {
+                resolve(result)
+            }
+       })
+   }) 
+}
+async function getRoomWithUser(id) { 
+   return new Promise((resolve, reject) => {  
+       const result = Room.find({
+           'users._id': {
+               $in: [mongoose.Types.ObjectId(id)]
+           }
+       }, (err, room) => {
+           if (err) {
+               reject(err)
+           }
+           if (!room) {
+               reject('error')
+           } else {
+               resolve(room)
+           }
+       })
+   }) 
+}
+async function addDeviceToAccount(id, device) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+           _id: id
+       }, {
+           $push: {
+               devices: device
+           }
+       }, (err, result) => {
+           if (err) {
+               reject(err)
+           }
+           if (!result) {
+               reject('error')
+           } else {
+               resolve(result)
+           }
+       })
+   }) 
+}
+async function updateDeviceStatusLogAllInactive(id, status) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+           _id: id
+       }, {
+           $push: {
+               'devices.$[d].statusLogs': status
+           }
+       }, {
+           arrayFilters: [
+               {
+                   'd.currentDevice': false
+               }
+           ]
+       }, (err, result) => {
+           if (err) {
+               reject(`Unable to update device status`)
+           }
+           if (!result) {
+                reject(`Unable to update device status`)
+           } else {
+                resolve(result)
+           }
+       })
+   }) 
+}
+async function updateDeviceStatusLog(id, uuid, status) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+            _id: id
+       }, {
+            $push: {
+                'devices.$[d].statusLogs': status
+            }
+       }, {
+            arrayFilters: [
+                {
+                    'd.uuid': uuid
+                }
+            ]
+       }, (err, result) => {
+            if (err) {
+                reject(`Unable to update device status`)
+            }
+            if (!result) {
+                reject(`Unable to update device status`)
+            } else {
+                resolve(result)
+            }
+       })
+   }) 
+}
+async function updateDeviceCurrentToDefault(id) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+           _id: id
+       }, {
+           $set: {
+               'devices.$[d].active': false,
+                'devices.$[d].logout': true,
+                'devices.$[d].currentDevice': false
+           }
+       }, {
+           arrayFilters: [
+               {
+                   'd.currentDevice': true
+               }
+           ],
+           multi: true
+       }, (err, result) => {
+           if (err) {
+                reject(`Unable to update account device to default`)
+           }
+           if (!result) {
+                reject(`Unable to update account device to default`)
+           } else {
+                resolve(result)
+           }
+       })
+   }) 
+}
+async function updateDeviceCurrentToCurrent(id, uuid) { 
+   return new Promise((resolve, reject) => {  
+       const result = Account.updateOne({
+           _id: id
+       }, {
+           $set: {
+               'devices.$[d].active': true,
+               'devices.$[d].logout': false,
+               'devices.$[d].currentDevice': true
+           }
+       }, {
+           arrayFilters: [
+               {
+                   'd.uuid': uuid
+               }
+           ]
+       }, (err, result) => {
+            if (err) {
+                reject(`Unable to update account device to current`)
+            }
+            if (!result) {
+                reject(`Unable to update account device to current`)
+            } else {
+                resolve(result)
+            }
+       })
+   }) 
+}
+//
 module.exports = function(router) {
 
     router.get('/', (req, res) => {
@@ -298,9 +495,154 @@ module.exports = function(router) {
 
         var sqlId = req.body.sqlId
         var uuid = req.body.uuid
+        var fcmToken = req.body.fcmToken
+        var firebaseToken = req.body.firebaseToken
+        var appVersion = req.body.appVersion
+        var deviceType = req.body.deviceType
+        var operationType = req.body.operationType
+        var operationVersion = req.body.operationVersion
+        var deviceModel = req.body.deviceModel
+        var macAddress = req.body.macAddress
+        var deviceName = req.body.deviceName
 
-        var auth = await accountAuth(sqlId, uuid)
-        console.log(auth)
+        var account = await getAccountWithSqlId(sqlId).catch((err) => {
+            var response = errorStatusCode(404, err)
+            res.status(404).json(response)
+            return
+        })
+
+        if (account) {
+            if (account.devices.length == 0) {
+
+                var status = {
+                    active: new Date()
+                }
+
+                var newDevice = {
+                    uuid: uuid,
+                    fcmToken: fcmToken,
+                    firebaseToken: firebaseToken,
+                    active: true,
+                    logout: false,
+                    rooms: [],
+                    statusLogs: [],
+                    deviceType: deviceType,
+                    operationType: operationType,
+                    operationVersion: operationVersion,
+                    appVersion: appVersion,
+                    deviceModel: deviceModel,
+                    macAddress: macAddress,
+                    deviceName: deviceName,
+                    currentDevice: true
+                }
+                newDevice.statusLogs.push(status)
+
+                var rooms = await getRoomWithUser(account._id)
+                rooms.forEach(room => {
+                    var roomToShow = {
+                        _is: room._id,
+                        isShow: true
+                    }
+                    newDevice.rooms.push(roomToShow)
+                })
+                var ac = await addDeviceToAccount(account._id, newDevice)
+                account.devices.push(newDevice)
+
+                var response = accountResponse(200, account)
+                res.status(200).json(response)
+            } else {
+                var device = account.devices.find(c => c.uuid === uuid)
+                if (!device) {
+                    var sactive = {
+                        active: new Date()
+                    }
+                    // MARK: - update token
+                    var ff = await updateAccountFcmToken(account._id, uuid, fcmToken)
+                    //
+                    var newDevice = {
+                        uuid: uuid,
+                        fcmToken: fcmToken,
+                        firebaseToken: firebaseToken,
+                        active: true,
+                        logout: false,
+                        rooms: [],
+                        statusLogs: [],
+                        deviceType: deviceType,
+                        operationType: operationType,
+                        operationVersion: operationVersion,
+                        appVersion: appVersion,
+                        deviceModel: deviceModel,
+                        macAddress: macAddress,
+                        deviceName: deviceName,
+                        currentDevice: true
+                    }
+                    newDevice.statusLogs.push(sactive)
+    
+                    var rooms = await getRoomWithUser(account._id)
+                    rooms.forEach(room => {
+                        var roomToShow = {
+                            _is: room._id,
+                            isShow: true
+                        }
+                        newDevice.rooms.push(roomToShow)
+                    })
+                    var sinactive = {
+                        inactive: new Date()
+                    }
+                    updateDeviceCurrentToDefault(account._id).then((ac) => {
+                        updateDeviceCurrentToCurrent(account._id, uuid).then((bc) => {
+                            updateDeviceStatusLogAllInactive(account.id, sinactive).then((cc) => {
+                                addDeviceToAccount(account._id, newDevice).then((errorStatusCode) => {
+                                    account.devices.push(newDevice)
+                                    var response = accountResponse(200, account)
+                                    res.status(200).json(response)
+                                }).catch((err) => {
+                                    var response = errorStatusCode(404, err)
+                                    res.status(404).json(response)
+                                })
+                            }).catch((err) => {
+                                var response = errorStatusCode(404, err)
+                                res.status(404).json(response)
+                            })
+                        }).catch((err) => {
+                            var response = errorStatusCode(404, err)
+                            res.status(404).json(response)
+                        })
+                    }).catch((err) => {
+                        var response = errorStatusCode(404, err)
+                        res.status(404).json(response)
+                    })
+                    
+                    
+                } else {
+                    var sinactive = {
+                        inactive: new Date()
+                    }
+                    // MARK: - update token
+                    var ff = await updateAccountFcmToken(account._id, uuid, fcmToken)
+                    //
+                    updateDeviceCurrentToDefault(account._id).then((ac) => {
+                        updateDeviceCurrentToCurrent(account._id, uuid).then((bc) => {
+                            updateDeviceStatusLogAllInactive(account.id, sinactive).then((cc) => {
+                                var response = accountResponse(200, account)
+                                res.status(200).json(response)
+                            }).catch((err) => {
+                                var response = errorStatusCode(404, err)
+                                res.status(404).json(response)
+                            })
+                        }).catch((err) => {
+                            var response = errorStatusCode(404, err)
+                            res.status(404).json(response)
+                        })
+                    }).catch((err) => {
+                        var response = errorStatusCode(404, err)
+                        res.status(404).json(response)
+                    })
+                }
+            }
+        } else {
+            // catch
+        }
     })
 
     router.post('/room/on', async (req, res) => {
