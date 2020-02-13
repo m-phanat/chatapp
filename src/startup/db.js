@@ -4,7 +4,7 @@ const mongoose = require('mongoose')
 
 module.exports = function() {
     // const db = `mongodb://localhost/${config.get('db.name')}`
-    const mongooseURL = `mongodb://localhost/chatapp`
+    const mongooseURL = `mongodb://localhost/chat-example`
 
     
     mongoose.set('useCreateIndex', true)

@@ -11,7 +11,7 @@ const io = require('socket.io')(server, {
 })
 
 // Port
-const port = process.env.PORT || 8082
+const port = process.env.PORT || 8080
 
 // MongoUrl
 require('./startup/db')()
