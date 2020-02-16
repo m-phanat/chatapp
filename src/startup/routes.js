@@ -16,7 +16,7 @@ module.exports = function(app) {
         extended: false
     }))
 
-    // app.use(express.static('uploads'))
+    app.use(express.static('uploads'))
     // app.use(express.static('resources'))
     // Router
     // Development
